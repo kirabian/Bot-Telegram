@@ -1,13 +1,15 @@
 const TelegramBot = require("node-telegram-bot-api");
 const wikipedia = require("wikipedia");
 const axios = require("axios");
-
+const express = require("express");
+const keepAlive = require("./keep_alive");
 
 // Ganti 'YOUR_BOT_TOKEN' dengan token bot Anda
 const token = "6882429275:AAGR1CpOm_2MZ8CXM84foz6MHEpkwRicXAs";
 
 // Inisialisasi bot
 const bot = new TelegramBot(token, { polling: true });
+const app = express();
 
 // Tentukan Bahasa Indonesia sebagai bahasa yang akan digunakan
 wikipedia.setLang("id");
@@ -23,7 +25,7 @@ function sendJoinMessage(chatId) {
           [{ text: "Join Channel", url: "https://t.me/testercodingan" }],
         ],
       },
-    },
+    }
   );
 }
 
@@ -85,33 +87,6 @@ bot.onText(/\/(truth|dare)/, (msg, match) => {
 bot.on("message", async (msg) => {
   const chatId = msg.chat.id;
   const messageText = msg.text;
-  const messagePhoto = msg.photo; // Ambil data foto jika pesan berisi foto
-
-  // Tanggapi jika pesan adalah gambar
-  if (messagePhoto && messagePhoto.length > 0) {
-    // Cek apakah pengguna membalas pesan gambar dengan perintah "tosticker"
-    if (messageText === "/tosticker" && msg.reply_to_message) {
-      // Ambil ID foto yang di-reply oleh pengguna
-      const photoId = msg.reply_to_message.photo[0].file_id;
-
-      try {
-        // Konversi foto menjadi stiker menggunakan method createStickerFromWebp
-        const sticker = await bot.createStickerFromWebp(
-          chatId,
-          photoId,
-          {
-            emojis: "👍", // Atur emoji untuk stiker yang dihasilkan
-          }
-        );
-
-        // Kirim stiker yang dihasilkan kembali kepada pengguna
-        bot.sendSticker(chatId, sticker.sticker.file_id);
-      } catch (error) {
-        console.error("Error:", error.message);
-        bot.sendMessage(chatId, "Maaf, terjadi kesalahan dalam mengonversi gambar menjadi stiker.");
-      }
-    }
-  }
 
   // Jika pesan berisi perintah /wiki
   if (messageText.startsWith("/wiki ")) {
@@ -130,14 +105,109 @@ bot.on("message", async (msg) => {
       bot.sendMessage(
         chatId,
         `Wikipedia hasil untuk "${query}":\n${summary.extract}`,
-        opts,
+        opts
       );
     } catch (error) {
       bot.sendMessage(chatId, "Tidak dapat menemukan hasil pada Wikipedia.");
     }
   }
 
-  // Kode lainnya di sini...
+  // Jika pesan berisi perintah /adzan
+  if (messageText.startsWith("/adzan")) {
+    const query = messageText.substring(7).trim(); // Menghapus '/adzan ' dari awal pesan
+    try {
+      // Mendapatkan data adzan berdasarkan nama kota
+      const response = await axios.get(
+        `http://api.aladhan.com/v1/timingsByCity?city=${query}&country=Indonesia`
+      );
+      const data = response.data.data;
+
+      // Memformat pesan dengan data adzan untuk lokasi tertentu
+      const timings = data.timings;
+      const adzanMessage = `Jadwal Adzan untuk ${query}:\n\nSubuh: ${timings.Fajr}\nDzuhur: ${timings.Dhuhr}\nAshar: ${timings.Asr}\nMaghrib: ${timings.Maghrib}\nIsya: ${timings.Isha}`;
+
+      bot.sendMessage(chatId, adzanMessage);
+    } catch (error) {
+      bot.sendMessage(
+        chatId,
+        "Maaf, tidak dapat menemukan jadwal Adzan untuk lokasi yang dimaksud."
+      );
+    }
+  }
+
+  // Jika pesan berisi perintah /berita
+  if (messageText.startsWith("/berita")) {
+    try {
+      // Mendapatkan berita trending dari News API
+      const response = await axios.get(
+        "https://newsapi.org/v2/top-headlines?country=id&apiKey=87f7fbf6bb5c4811bef41da70e59bec0"
+      );
+      const articles = response.data.articles;
+
+      // Mengirim 5 berita teratas ke pengguna
+      for (let i = 0; i < 5; i++) {
+        const article = articles[i];
+        const message = `${i + 1}. ${article.title}\n${article.url}`;
+        bot.sendMessage(chatId, message);
+      }
+    } catch (error) {
+      bot.sendMessage(chatId, "Maaf, tidak dapat menemukan berita trending.");
+    }
+  }
+
+  if (messageText.startsWith('/lagu ')) {
+    const query = messageText.substring(6).trim(); // Menghapus '/lagu ' dari awal pesan
+    const [artist, title] = query.split('/'); // Memisahkan nama artis dan judul lagu
+
+    try {
+        // Melakukan pencarian lirik lagu menggunakan Lyrics.ovh API
+        const response = await axios.get(`https://api.lyrics.ovh/v1/${encodeURIComponent(artist)}/${encodeURIComponent(title)}`);
+        const lyrics = response.data.lyrics;
+
+        if (lyrics) {
+            bot.sendMessage(chatId, `Lirik lagu untuk "${query}":\n\n${lyrics}`);
+        } else {
+            bot.sendMessage(chatId, `Maaf, lirik lagu untuk "${query}" tidak ditemukan.`);
+        }
+    } catch (error) {
+        // Jika terjadi kesalahan, kirim pesan error yang lebih deskriptif
+        console.error('Error:', error.message);
+        bot.sendMessage(chatId, 'Maaf, terjadi kesalahan dalam mencari lirik lagu. Mohon coba lagi nanti.');
+    }
+}
+
+  // Jika pesan berisi perintah /start
+  if (messageText === "/start") {
+    // Periksa apakah pengguna telah bergabung dengan channel
+    const isJoined = await bot
+      .getChatMember("@testercodingan", msg.from.id)
+      .then((member) => {
+        return member.status !== "left" && member.status !== "kicked";
+      })
+      .catch((err) => {
+        console.error("Error:", err.message);
+        return false;
+      });
+
+    if (isJoined) {
+      // Jika pengguna sudah bergabung, kirim pesan selamat menggunakan
+      const opts = {
+        reply_markup: {
+          inline_keyboard: [
+            [
+              { text: "Owner", url: "http://t.me/mgelissa" },
+              { text: "Donation", url: "http://example.com/2" },
+            ],
+          ],
+        },
+      };
+      const welcomeMessage = `Halo! Selamat datang kembali. Silakan gunakan perintah /help untuk melihat isi command yang tersedia.`;
+      bot.sendMessage(chatId, welcomeMessage, opts);
+    } else {
+      // Jika pengguna belum bergabung, kirim pesan untuk bergabung ke channel
+      sendJoinMessage(chatId);
+    }
+  }
 });
 
 // Tanggapi perintah /help
@@ -145,7 +215,7 @@ bot.onText(/\/help/, (msg) => {
   const chatId = msg.chat.id;
   const helpMessage = `
   Welcome To My Bot!
-
+  
   This Is Command Bot:
   📚 /wiki - Search on Wikipedia.
   📰 /berita - Get top news headlines.
@@ -156,38 +226,16 @@ bot.onText(/\/help/, (msg) => {
   bot.sendMessage(chatId, helpMessage);
 });
 
-// Tanggapi perintah /start
-bot.onText(/\/start/, async (msg) => {
+bot.onText(/\/id/, (msg) => {
   const chatId = msg.chat.id;
-  // Periksa apakah pengguna telah bergabung dengan channel
-  const isJoined = await bot
-    .getChatMember("@testercodingan", msg.from.id)
-    .then((member) => {
-      return member.status !== "left" && member.status !== "kicked";
-    })
-    .catch((err) => {
-      console.error("Error:", err.message);
-      return false;
-    });
+  const user = msg.from;
 
-  if (isJoined) {
-    // Jika pengguna sudah bergabung, kirim pesan selamat menggunakan
-    const opts = {
-      reply_markup: {
-        inline_keyboard: [
-          [
-            { text: "Owner", url: "http://t.me/mgelissa" },
-            { text: "Donation", url: "http://example.com/2" },
-          ],
-        ],
-      },
-    };
-    const welcomeMessage = `Halo! Selamat datang kembali. Silakan gunakan perintah /help untuk melihat isi command yang tersedia.`;
-    bot.sendMessage(chatId, welcomeMessage, opts);
-  } else {
-    // Jika pengguna belum bergabung, kirim pesan untuk bergabung ke channel
-    sendJoinMessage(chatId);
-  }
+  let message = `🆔 <b>User ID:</b> ${user.id}\n`;
+  message += user.username ? `👤 <b>Username:</b> @${user.username}\n` : '';
+  message += `📛 <b>Name:</b> ${user.first_name} ${user.last_name ? user.last_name : ""}\n`;
+  message += `🌐 <b>Language:</b> ${user.language_code ? user.language_code : "Not specified"}`;
+
+  bot.sendMessage(chatId, message, { parse_mode: "HTML" });
 });
 
 // Start the bot

@@ -5,7 +5,7 @@ const express = require("express");
 const keepAlive = require("./keep_alive");
 
 // Ganti 'YOUR_BOT_TOKEN' dengan token bot Anda
-const token = "6882429275:AAGR1CpOm_2MZ8CXM84foz6MHEpkwRicXAs";
+const token = "TOKEN";
 
 // Inisialisasi bot
 const bot = new TelegramBot(token, { polling: true });
